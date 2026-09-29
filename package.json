@@ -1,0 +1,40 @@
+{
+  "name": "iterm2-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that lets AI assistants drive iTerm2 on macOS: run commands, read output, send keystrokes, and manage tabs, windows and split panes.",
+  "type": "module",
+  "bin": {
+    "iterm2-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "print-jxa": "node --input-type=module -e \"import('./dist/jxa.js').then((m) => process.stdout.write(m.JXA_SOURCE))\""
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "iterm2",
+    "terminal",
+    "macos",
+    "claude"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.2"
+  }
+}

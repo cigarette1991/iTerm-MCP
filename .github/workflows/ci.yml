@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      # `npm ci` also builds dist/ through the prepare script.
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Compile the JXA bridge with osacompile
+        if: runner.os == 'macOS'
+        run: |
+          npm run -s print-jxa > "$RUNNER_TEMP/iterm-bridge.js"
+          osacompile -l JavaScript -o "$RUNNER_TEMP/iterm-bridge.scpt" "$RUNNER_TEMP/iterm-bridge.js"
