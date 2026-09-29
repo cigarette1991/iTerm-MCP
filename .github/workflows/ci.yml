@@ -18,8 +18,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # `npm ci` also builds dist/ through the prepare script.
       - run: npm ci
+      - run: npm run build
       - run: npm run typecheck
       - run: npm test
       - name: Compile the JXA bridge with osacompile

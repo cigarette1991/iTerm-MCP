@@ -17,28 +17,24 @@ press keys like Ctrl-C, and open tabs, windows and split panes, all in real iTer
 - macOS with iTerm2 3.x
 - Node.js 20 or newer
 
-## Install
+## Setup
 
-Clone and build it (`npm install` also compiles the TypeScript into `dist/`):
+Clone and build it:
 
 ```sh
 git clone https://github.com/cigarette1991/iTerm-MCP.git
 cd iTerm-MCP
 npm install
+npm run build
 ```
 
-Then register it with your MCP client.
+Then register the built server with your MCP client, using the absolute path to your checkout. After pulling
+changes, run `npm run build` again and restart the client.
 
 **Claude Code**
 
 ```sh
 claude mcp add --scope user iterm2 -- node /absolute/path/to/iTerm-MCP/dist/index.js
-```
-
-Or skip the clone and let npx fetch and build it from GitHub:
-
-```sh
-claude mcp add --scope user iterm2 -- npx -y github:cigarette1991/iTerm-MCP
 ```
 
 **Claude Desktop, Cursor, and other clients.** Add this to the client's MCP configuration. For Claude Desktop that
@@ -128,10 +124,10 @@ refuses to type there, and tells the assistant to open a split pane or tab inste
 ## Development
 
 ```sh
-npm install        # installs dependencies and builds dist/
+npm install
+npm run build      # compiles src/ into dist/
 npm run typecheck
 npm test           # runs on Linux too; macOS-only checks are skipped there
-npm run build
 ```
 
 The tests run the exact JXA script against a model of iTerm2's scripting objects, drive the MCP tools end to end
