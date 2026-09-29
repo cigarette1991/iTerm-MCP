@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -9,6 +9,7 @@ import {
   listProcesses,
   normalizeTty,
   parsePsOutput,
+  type ProcessInfo,
 } from "../src/processes.js";
 
 // Shaped like `ps -A -ww -o pid=,ppid=,pgid=,tpgid=,stat=,tty=,args=` on macOS.
@@ -115,54 +116,67 @@ describe("controllingTty", () => {
 });
 
 // Exercises the real `ps` against a real pseudo-terminal, as on an iTerm2 session.
-describe.runIf(process.platform === "linux" || process.platform === "darwin")("with a real terminal", () => {
+// Python's pty module gives bash a terminal of its own the same way on Linux and macOS.
+const hasPython = spawnSync("python3", ["--version"]).status === 0;
+
+describe.runIf((process.platform === "linux" || process.platform === "darwin") && hasPython)("with a real terminal", () => {
   let child: ChildProcess | undefined;
+  let childOutput = "";
   afterEach(() => {
     child?.kill("SIGKILL");
     child = undefined;
+    childOutput = "";
   });
 
-  async function waitFor<T>(probe: () => Promise<T | undefined>): Promise<T> {
+  /** Polls until probe returns a value, failing with a description of what was last seen. */
+  async function waitFor<T>(step: string, probe: () => Promise<{ value?: T; seen: string }>): Promise<T> {
+    let seen = "";
     for (let i = 0; i < 100; i++) {
-      const value = await probe();
-      if (value !== undefined) return value;
+      const result = await probe();
+      if (result.value !== undefined) return result.value;
+      seen = result.seen;
       await sleep(50);
     }
-    throw new Error("condition not reached");
+    throw new Error(`Timed out waiting to ${step}.\nLast seen: ${seen}\nHelper output: ${JSON.stringify(childOutput.slice(-2000))}`);
   }
 
-  it("tells an idle shell from a running command", async () => {
-    // `script` gives bash a pty of its own. Its flags differ between util-linux and BSD.
-    const shell = "bash --norc --noprofile -i";
-    const args = process.platform === "darwin" ? ["-q", "/dev/null", ...shell.split(" ")] : ["-qfc", shell, "/dev/null"];
-    child = spawn("script", args, { stdio: ["pipe", "pipe", "pipe"] });
-    child.stdout?.resume();
-    child.stderr?.resume();
+  const onTty = (processes: ProcessInfo[], tty: string) =>
+    JSON.stringify(processes.filter((p) => normalizeTty(p.tty) === normalizeTty(tty)));
 
-    const tty = await waitFor(async () => {
+  it("tells an idle shell from a running command", { timeout: 30_000 }, async () => {
+    const shell = ["bash", "--norc", "--noprofile", "-i"];
+    child = spawn("python3", ["-c", "import pty, sys; pty.spawn(sys.argv[1:])", ...shell], { stdio: ["pipe", "pipe", "pipe"] });
+    child.stdout?.on("data", (d) => (childOutput += d));
+    child.stderr?.on("data", (d) => (childOutput += d));
+
+    const tty = await waitFor("find bash on its own terminal", async () => {
       const processes = await listProcesses();
-      const bash = processes.find((p) => p.args.startsWith(shell) && normalizeTty(p.tty) !== "");
-      return bash ? bash.tty : undefined;
+      const bash = processes.find((p) => p.args === shell.join(" ") && normalizeTty(p.tty) !== "");
+      const helpers = processes.filter((p) => p.pid === child?.pid || p.ppid === child?.pid);
+      return { value: bash?.tty, seen: JSON.stringify(helpers) };
     });
     expect(tty).toMatch(process.platform === "darwin" ? /^ttys\d+$/ : /^pts\/\d+$/);
 
-    const idle = await waitFor(async () => {
-      const state = jobStateForTty(await listProcesses(), `/dev/${tty}`);
-      return state.known && !state.busy ? state : undefined;
+    const idle = await waitFor("see the shell idle", async () => {
+      const processes = await listProcesses();
+      const state = jobStateForTty(processes, `/dev/${tty}`);
+      return { value: state.known && !state.busy ? state : undefined, seen: onTty(processes, tty) };
     });
     expect(idle.running).toEqual([]);
 
     child.stdin?.write("sleep 30\n");
-    const busy = await waitFor(async () => {
-      const state = jobStateForTty(await listProcesses(), `/dev/${tty}`);
-      return state.busy ? state : undefined;
+    const busy = await waitFor("see sleep in the foreground", async () => {
+      const processes = await listProcesses();
+      const state = jobStateForTty(processes, `/dev/${tty}`);
+      return { value: state.busy ? state : undefined, seen: onTty(processes, tty) };
     });
     expect(describeJob(busy)).toBe("sleep 30");
 
     child.stdin?.write("\x03");
-    await waitFor(async () => {
-      const state = jobStateForTty(await listProcesses(), `/dev/${tty}`);
-      return state.known && !state.busy ? state : undefined;
+    await waitFor("see the shell idle after Ctrl-C", async () => {
+      const processes = await listProcesses();
+      const state = jobStateForTty(processes, `/dev/${tty}`);
+      return { value: state.known && !state.busy ? state : undefined, seen: onTty(processes, tty) };
     });
   });
 
